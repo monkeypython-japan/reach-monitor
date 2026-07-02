@@ -6,9 +6,6 @@ import CoreLocation
 struct WiFiInfo {
     var ssid: String?
     var bssid: String?
-    /// Approximate time the current AP association began. Reset when the BSSID
-    /// changes. `nil` when not associated with any AP.
-    var connectedSince: Date?
     /// Whether Location authorization is granted (required for SSID/BSSID on
     /// macOS 14+). When `false`, `ssid`/`bssid` will be `nil`.
     var locationAuthorized: Bool
@@ -17,14 +14,11 @@ struct WiFiInfo {
 }
 
 /// Tracks the current Wi-Fi AP via CoreWLAN, using Location authorization so the
-/// BSSID/SSID are readable, and detects AP switches to reset the elapsed timer.
+/// BSSID/SSID are readable.
 final class WiFiMonitor: NSObject, CWEventDelegate, CLLocationManagerDelegate {
     private let client = CWWiFiClient.shared()
     private let locationManager = CLLocationManager()
     private var pollTimer: DispatchSourceTimer?
-
-    private var lastBSSID: String?
-    private var connectedSince: Date?
 
     /// Called on the main queue whenever the Wi-Fi info changes.
     var onUpdate: ((WiFiInfo) -> Void)?
@@ -57,24 +51,15 @@ final class WiFiMonitor: NSObject, CWEventDelegate, CLLocationManagerDelegate {
         try? client.stopMonitoringAllEvents()
     }
 
-    /// Read the current association and emit an update, resetting the elapsed
-    /// timer if the BSSID changed.
+    /// Read the current association and emit an update.
     func refresh() {
         let interface = client.interface()
         let bssid = interface?.bssid()
         let ssid = interface?.ssid()
 
-        if bssid != lastBSSID {
-            lastBSSID = bssid
-            // New association (or first detection). Approximate the connect time
-            // as "now" since macOS does not expose the true association time.
-            connectedSince = (bssid != nil) ? Date() : nil
-        }
-
         let info = WiFiInfo(
             ssid: ssid,
             bssid: bssid,
-            connectedSince: connectedSince,
             locationAuthorized: isLocationAuthorized,
             hasWiFiInterface: interface != nil && interface?.powerOn() == true
         )

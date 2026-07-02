@@ -40,7 +40,7 @@ struct MenuContent: View {
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Text("接続からの経過時間")
+                Text("到達確認からの経過時間")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -49,7 +49,7 @@ struct MenuContent: View {
                     .foregroundStyle(.secondary)
             }
             if !state.wifi.locationAuthorized {
-                Text("SSID/経過時間の表示には位置情報の許可が必要です。")
+                Text("SSID の表示には位置情報の許可が必要です。")
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }
@@ -91,8 +91,7 @@ struct MenuContent: View {
     // MARK: - Helpers
 
     private var elapsedString: String {
-        guard let since = state.wifi.connectedSince else { return "—" }
-        let secs = max(0, Int(state.currentTime.timeIntervalSince(since)))
+        guard let secs = state.reachElapsedSeconds else { return "—" }
         let h = secs / 3600, m = (secs % 3600) / 60, s = secs % 60
         return String(format: "%02d:%02d:%02d", h, m, s)
     }

@@ -8,12 +8,22 @@ final class AppState: ObservableObject {
     @Published var status: ReachStatus = .checking
     @Published var results: [TargetResult] = []
     @Published var wifi: WiFiInfo = WiFiInfo(
-        ssid: nil, bssid: nil, connectedSince: nil,
-        locationAuthorized: false, hasWiFiInterface: false
+        ssid: nil, bssid: nil, locationAuthorized: false, hasWiFiInterface: false
     )
 
     /// Drives the live elapsed-time displays (menu bar label + popover).
     @Published var currentTime = Date()
+
+    /// Start of the current reachable streak; ticking while non-nil.
+    private var reachTimerStart: Date?
+    /// Elapsed time captured at the moment reachability was lost; frozen
+    /// (non-ticking) display value while unreachable.
+    private var reachTimerFrozenElapsed: TimeInterval?
+    /// Last *confirmed* status from the monitor, used to detect reachable/
+    /// unreachable edges. Kept separate from `status` because `checkNow()`
+    /// optimistically sets `status = .checking`, which must not be mistaken
+    /// for a real edge.
+    private var lastConfirmedStatus: ReachStatus = .checking
 
     private let reachability = ReachabilityMonitor(targets: DefaultTargets.all)
     private let wifiMonitor = WiFiMonitor()
@@ -51,6 +61,22 @@ final class AppState: ObservableObject {
     private func apply(results: [TargetResult], status: ReachStatus) {
         self.results = results
         self.status = status
+
+        let previous = lastConfirmedStatus
+        lastConfirmedStatus = status
+
+        if status == .reachable && previous != .reachable {
+            // First confirmation, or recovery from unreachable: restart from 0:00.
+            reachTimerStart = Date()
+            reachTimerFrozenElapsed = nil
+        } else if status == .unreachable && previous == .reachable {
+            // Just lost reachability: freeze the timer at its current value.
+            if let start = reachTimerStart {
+                reachTimerFrozenElapsed = Date().timeIntervalSince(start)
+            }
+            reachTimerStart = nil
+        }
+
         let failed = results.filter { $0.reachable != true }.map(\.target)
         notifications.handle(status: status, failedTargets: failed)
     }
@@ -69,10 +95,22 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Seconds elapsed since reachability was last (re)confirmed. Ticks while
+    /// reachable; frozen at its last value while unreachable; `nil` until the
+    /// first reachable confirmation.
+    var reachElapsedSeconds: Int? {
+        if let start = reachTimerStart {
+            return max(0, Int(currentTime.timeIntervalSince(start)))
+        }
+        if let frozen = reachTimerFrozenElapsed {
+            return max(0, Int(frozen))
+        }
+        return nil
+    }
+
     /// "h:mm" elapsed string for the menu bar label (no seconds).
     var menuBarElapsedText: String {
-        guard let since = wifi.connectedSince else { return "" }
-        let secs = max(0, Int(currentTime.timeIntervalSince(since)))
+        guard let secs = reachElapsedSeconds else { return "" }
         let h = secs / 3600
         let m = (secs % 3600) / 60
         return String(format: "%d:%02d", h, m)
