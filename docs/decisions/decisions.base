@@ -1,0 +1,28 @@
+filters:
+  and:
+    - file.inFolder("Development/reach-monitor/decisions")
+    - file.hasTag("adr")
+    - '!file.hasTag("moc")'
+    - file.name != "template"
+formulas:
+  status_ja: if(status == "accepted", "承認", if(status == "proposed", "提案", if(status == "rejected", "却下", if(status == "deprecated", "廃止", if(status == "superseded", "置換", status)))))
+properties:
+  adr:
+    displayName: No.
+  file.name:
+    displayName: タイトル
+  formula.status_ja:
+    displayName: ステータス
+  date:
+    displayName: 日付
+views:
+  - type: table
+    name: ADR 一覧
+    order:
+      - adr
+      - file.name
+      - formula.status_ja
+      - date
+    sort:
+      - property: adr
+        direction: ASC

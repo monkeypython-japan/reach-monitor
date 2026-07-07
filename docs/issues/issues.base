@@ -1,0 +1,31 @@
+filters:
+  and:
+    - file.inFolder("Development/reach-monitor/issues")
+    - file.hasTag("issue")
+    - '!file.hasTag("moc")'
+    - file.name != "template"
+formulas:
+  issue_type: if(file.hasTag("bug"), "bug", if(file.hasTag("pitfall"), "pitfall", if(file.hasTag("workaround"), "workaround", "")))
+  status_ja: if(status == "open", "未解決", if(status == "resolved", "解決済み", if(status == "workaround", "回避中", if(status == "wontfix", "対応しない", status))))
+properties:
+  file.name:
+    displayName: タイトル
+  formula.issue_type:
+    displayName: 種別
+  formula.status_ja:
+    displayName: ステータス
+  date:
+    displayName: 日付
+views:
+  - type: table
+    name: Issues 一覧
+    order:
+      - file.name
+      - formula.issue_type
+      - formula.status_ja
+      - date
+    sort:
+      - property: date
+        direction: DESC
+    columnSize:
+      file.name: 379
