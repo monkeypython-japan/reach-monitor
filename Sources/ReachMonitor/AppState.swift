@@ -150,4 +150,10 @@ final class AppState: ObservableObject {
         @unknown default:    return "不明"
         }
     }
+
+    /// 使用中のリンクが Wi-Fi かどうか。Ethernet 等の場合は SSID 表示が無意味なので、
+    /// ポップオーバー側でこれを見て Wi-Fi 関連の行を出し分ける。
+    var isLinkWiFi: Bool {
+        link.interfaceType == .wifi
+    }
 }

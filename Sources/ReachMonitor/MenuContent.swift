@@ -39,13 +39,15 @@ struct MenuContent: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            HStack {
-                Text("Wi-Fi")
-                    .font(.subheadline).bold()
-                Spacer()
-                Text(state.wifi.ssid ?? (state.wifi.locationAuthorized ? "未接続" : "位置情報が必要"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            if state.isLinkWiFi {
+                HStack {
+                    Text("Wi-Fi")
+                        .font(.subheadline).bold()
+                    Spacer()
+                    Text(state.wifi.ssid ?? (state.wifi.locationAuthorized ? "未接続" : "位置情報が必要"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             HStack {
                 Text("到達確認からの経過時間")
@@ -56,7 +58,7 @@ struct MenuContent: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
-            if !state.wifi.locationAuthorized {
+            if state.isLinkWiFi && !state.wifi.locationAuthorized {
                 Text("SSID の表示には位置情報の許可が必要です。")
                     .font(.caption2)
                     .foregroundStyle(.orange)
