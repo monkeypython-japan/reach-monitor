@@ -10,6 +10,7 @@ final class AppState: ObservableObject {
     @Published var wifi: WiFiInfo = WiFiInfo(
         ssid: nil, bssid: nil, locationAuthorized: false, hasWiFiInterface: false
     )
+    @Published var link: LinkInfo = LinkInfo(interfaceType: nil)
 
     /// Drives the live elapsed-time displays (menu bar label + popover).
     @Published var currentTime = Date()
@@ -27,6 +28,7 @@ final class AppState: ObservableObject {
 
     private let reachability = ReachabilityMonitor(targets: DefaultTargets.all)
     private let wifiMonitor = WiFiMonitor()
+    private let linkMonitor = LinkMonitor()
     private let notifications = NotificationManager()
     private var clockTimer: Timer?
 
@@ -42,12 +44,16 @@ final class AppState: ObservableObject {
         wifiMonitor.onUpdate = { [weak self] info in
             Task { @MainActor in self?.wifi = info }
         }
+        linkMonitor.onUpdate = { [weak self] info in
+            Task { @MainActor in self?.link = info }
+        }
     }
 
     func start() {
         notifications.requestAuthorization()
         reachability.start()
         wifiMonitor.start()
+        linkMonitor.start()
         clockTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.currentTime = Date() }
         }
@@ -129,6 +135,19 @@ final class AppState: ObservableObject {
         case .checking:    return .secondary
         case .reachable:   return .green
         case .unreachable: return .red
+        }
+    }
+
+    /// ポップオーバーに表示するリンク種別のラベル。
+    var linkTypeText: String {
+        switch link.interfaceType {
+        case .wifi:          return "Wi-Fi"
+        case .wiredEthernet: return "Ethernet"
+        case .cellular:      return "セルラー"
+        case .loopback:      return "ループバック"
+        case .other:         return "その他"
+        case .none:          return "不明"
+        @unknown default:    return "不明"
         }
     }
 }

@@ -32,6 +32,14 @@ struct MenuContent: View {
     private var wifiSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
+                Text("使用中のリンク")
+                    .font(.subheadline).bold()
+                Spacer()
+                Text(state.linkTypeText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
                 Text("Wi-Fi")
                     .font(.subheadline).bold()
                 Spacer()
