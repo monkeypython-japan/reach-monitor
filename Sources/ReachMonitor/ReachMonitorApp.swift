@@ -37,8 +37,8 @@ extension AppState {
             let nsColor: NSColor
             switch self.status {
             case .checking:    nsColor = .systemGray
-            case .reachable:   nsColor = .systemRed
             case .unreachable: nsColor = .black
+            case .reachable:   nsColor = self.isLinkWiFi ? .systemBlue : .systemRed
             }
             nsColor.setFill()
             NSBezierPath(ovalIn: rect).fill()

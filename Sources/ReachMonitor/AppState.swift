@@ -90,13 +90,13 @@ final class AppState: ObservableObject {
     // MARK: - Derived presentation values
 
     /// Color of the circle shown in the menu bar.
-    /// - Reachable   → red   (赤丸)
+    /// - Reachable   → リンク種別で色分け（Wi-Fi=青、Ethernet 等=赤）
     /// - Unreachable → primary (黒/白: adapts to menu bar appearance)
     /// - Checking    → secondary (gray)
     var menuBarCircleColor: Color {
         switch status {
         case .checking:    return .secondary
-        case .reachable:   return .red
+        case .reachable:   return isLinkWiFi ? .blue : .red
         case .unreachable: return .primary
         }
     }

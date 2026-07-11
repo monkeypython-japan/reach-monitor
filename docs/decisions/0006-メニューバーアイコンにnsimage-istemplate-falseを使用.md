@@ -9,6 +9,7 @@ tags:
 adr: 0006
 status: accepted
 date: 2026-07-01
+modified: 2026-07-07
 ---
 
 # ADR-0006: メニューバーアイコンは NSImage(isTemplate: false) で描画する
@@ -58,3 +59,7 @@ date: 2026-07-01
 
 - 関連 Issue: [[menubarextraのラベルが色を失う-テンプレート画像化]]
 - 関連実装: `Sources/ReachMonitor/ReachMonitorApp.swift`
+- 到達可能時の色の意味（従来は常に赤）は
+  [[0009-到達可能時のメニューバー丸色をリンク種別で出し分ける|ADR-0009]] で
+  リンク種別（Wi-Fi=青/Ethernet=赤）による出し分けに更新された。丸の描画方式
+  （`NSImage`, `isTemplate = false`）自体はこの ADR の決定のまま変わらない。
