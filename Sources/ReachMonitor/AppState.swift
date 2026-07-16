@@ -27,6 +27,7 @@ final class AppState: ObservableObject {
     private let wifiMonitor = WiFiMonitor()
     private let linkMonitor = LinkMonitor()
     private let notifications = NotificationManager()
+    private let linkHistory = LinkHistoryLogger()
 
     init() {
         results = DefaultTargets.all.map {
@@ -41,7 +42,13 @@ final class AppState: ObservableObject {
             Task { @MainActor in self?.wifi = info }
         }
         linkMonitor.onUpdate = { [weak self] info in
-            Task { @MainActor in self?.link = info }
+            Task { @MainActor in
+                guard let self else { return }
+                if info.interfaceType != self.link.interfaceType {
+                    self.linkHistory.logLinkChange(from: self.link, to: info, wifi: self.wifi)
+                }
+                self.link = info
+            }
         }
     }
 
