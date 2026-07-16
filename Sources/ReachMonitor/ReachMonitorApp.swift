@@ -4,14 +4,19 @@ import SwiftUI
 @main
 struct ReachMonitorApp: App {
     @StateObject private var state = AppState()
+    @StateObject private var clock = ClockTick()
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent()
                 .environmentObject(state)
-                .task { state.start() }
+                .environmentObject(clock)
+                .task {
+                    state.start()
+                    clock.start()
+                }
         } label: {
-            let elapsed = state.menuBarElapsedText
+            let elapsed = state.menuBarElapsedText(at: clock.now)
             let img = Image(nsImage: state.menuBarIcon)
             if elapsed.isEmpty {
                 img

@@ -49,15 +49,7 @@ struct MenuContent: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            HStack {
-                Text("到達確認からの経過時間")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(elapsedString)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
+            ElapsedTimeRow()
             if state.isLinkWiFi && !state.wifi.locationAuthorized {
                 Text("SSID の表示には位置情報の許可が必要です。")
                     .font(.caption2)
@@ -100,12 +92,6 @@ struct MenuContent: View {
 
     // MARK: - Helpers
 
-    private var elapsedString: String {
-        guard let secs = state.reachElapsedSeconds else { return "—" }
-        let h = secs / 3600, m = (secs % 3600) / 60, s = secs % 60
-        return String(format: "%02d:%02d:%02d", h, m, s)
-    }
-
     private func symbol(for r: TargetResult) -> String {
         switch r.reachable {
         case .some(true):  return "checkmark.circle.fill"
@@ -126,5 +112,32 @@ struct MenuContent: View {
         if let l = r.latency { return String(format: "%d ms", Int(l * 1000)) }
         if r.reachable == false { return "不可" }
         return "—"
+    }
+}
+
+/// 「到達確認からの経過時間」行だけを切り出したサブビュー。`ClockTick` を購読する
+/// のをこのビューだけに閉じ込めることで、1 秒ごとの tick で再描画されるのが
+/// この行だけになり、`MenuContent` 全体（ターゲット一覧やボタンを含む）が
+/// 毎秒再評価されるのを防ぐ。
+private struct ElapsedTimeRow: View {
+    @EnvironmentObject var state: AppState
+    @EnvironmentObject var clock: ClockTick
+
+    var body: some View {
+        HStack {
+            Text("到達確認からの経過時間")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(elapsedString)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var elapsedString: String {
+        guard let secs = state.reachElapsedSeconds(at: clock.now) else { return "—" }
+        let h = secs / 3600, m = (secs % 3600) / 60, s = secs % 60
+        return String(format: "%02d:%02d:%02d", h, m, s)
     }
 }

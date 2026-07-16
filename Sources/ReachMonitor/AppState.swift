@@ -12,9 +12,6 @@ final class AppState: ObservableObject {
     )
     @Published var link: LinkInfo = LinkInfo(interfaceType: nil)
 
-    /// Drives the live elapsed-time displays (menu bar label + popover).
-    @Published var currentTime = Date()
-
     /// Start of the current reachable streak; ticking while non-nil.
     private var reachTimerStart: Date?
     /// Elapsed time captured at the moment reachability was lost; frozen
@@ -30,7 +27,6 @@ final class AppState: ObservableObject {
     private let wifiMonitor = WiFiMonitor()
     private let linkMonitor = LinkMonitor()
     private let notifications = NotificationManager()
-    private var clockTimer: Timer?
 
     init() {
         results = DefaultTargets.all.map {
@@ -54,9 +50,6 @@ final class AppState: ObservableObject {
         reachability.start()
         wifiMonitor.start()
         linkMonitor.start()
-        clockTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async { self?.currentTime = Date() }
-        }
     }
 
     func checkNow() {
@@ -101,12 +94,17 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Seconds elapsed since reachability was last (re)confirmed. Ticks while
-    /// reachable; frozen at its last value while unreachable; `nil` until the
-    /// first reachable confirmation.
-    var reachElapsedSeconds: Int? {
+    /// Seconds elapsed since reachability was last (re)confirmed, as of `now`.
+    /// Ticks while reachable; frozen at its last value while unreachable;
+    /// `nil` until the first reachable confirmation.
+    ///
+    /// Takes `now` as a parameter (rather than reading a `@Published` clock
+    /// property on `AppState`) so that only the small views which actually
+    /// display elapsed time re-render every second, instead of every view
+    /// that observes `AppState` (see `ClockTick`).
+    func reachElapsedSeconds(at now: Date) -> Int? {
         if let start = reachTimerStart {
-            return max(0, Int(currentTime.timeIntervalSince(start)))
+            return max(0, Int(now.timeIntervalSince(start)))
         }
         if let frozen = reachTimerFrozenElapsed {
             return max(0, Int(frozen))
@@ -114,9 +112,9 @@ final class AppState: ObservableObject {
         return nil
     }
 
-    /// "h:mm" elapsed string for the menu bar label (no seconds).
-    var menuBarElapsedText: String {
-        guard let secs = reachElapsedSeconds else { return "" }
+    /// "h:mm" elapsed string for the menu bar label (no seconds), as of `now`.
+    func menuBarElapsedText(at now: Date) -> String {
+        guard let secs = reachElapsedSeconds(at: now) else { return "" }
         let h = secs / 3600
         let m = (secs % 3600) / 60
         return String(format: "%d:%02d", h, m)
