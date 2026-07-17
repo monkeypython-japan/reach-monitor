@@ -86,38 +86,47 @@ conflate them or make one drive the other; the whole point is that they can dive
 Wi-Fi⇄Ethernet flap resets the menu bar to 0:00 while the popover keeps counting straight through,
 because reachability never dropped).
 
-**Menu bar (`h:mm`, `AppState.menuBarElapsedText(at:)` / `linkElapsedSeconds(at:)`) — link-based.**
-Tracks time since the current link (Wi-Fi or Ethernet) was last (re)connected, driven by
-`LinkMonitor`'s `interfaceType`:
+**Menu bar (`h:mm`, `AppState.menuBarElapsedText(at:)` / `menuBarTimerElapsedSeconds(at:)`) —
+"fully healthy" (link connected *and* reachable).** Tracks time since the connection was last both
+link-connected and TCP-reachable at once, using a single `menuBarTimerStart`/
+`menuBarTimerFrozenElapsed` pair driven by *two* independent edge sources:
 - `AppState`'s `linkMonitor.onUpdate` compares each update's `interfaceType` against the current
-  `link.interfaceType`; only an actual change calls `updateLinkTimer(newType:)`.
-- New link connects (`interfaceType` goes from `nil` to some type, *or* switches directly from one
-  type to another, e.g. Wi-Fi→Ethernet) → `linkTimerStart = Date()`, restart from 0:00. A direct
-  type-to-type switch is treated as "old link gone, new link up" and resets rather than freezing
-  in between.
-- Link drops (`interfaceType` becomes `nil`) → freeze: capture elapsed into
-  `linkTimerFrozenElapsed`, clear `linkTimerStart` so the clock stops advancing.
-- Every reset/freeze is also recorded by `LinkHistoryLogger` alongside the transition that caused
-  it (`timer=reset` / `timer=freeze(upSeconds=N)`, see ADR-0011/0012).
+  `link.interfaceType`; only an actual change calls `updateLinkTimer(newType:)`, which resets on a
+  new link (`interfaceType` from `nil` to some type, *or* switching directly from one type to
+  another, e.g. Wi-Fi→Ethernet — treated as "old link gone, new link up") and freezes when the link
+  drops (`interfaceType` becomes `nil`).
+- `apply(results:status:)`'s confirmed-status edges (the same ones driving the popover's timer,
+  see below) *also* reset the menu bar timer on reachability recovery and freeze it on reachability
+  loss, via the shared `resetMenuBarTimer()`/`freezeMenuBarTimer()` helpers.
+- Both `resetMenuBarTimer()`/`freezeMenuBarTimer()` are no-ops-safe to call redundantly: freezing an
+  already-frozen timer keeps the existing frozen value, and whichever of the two edge sources resets
+  *last* naturally becomes the new start time — no explicit coordination between them is needed.
+- Only the link-edge path is recorded by `LinkHistoryLogger` (`timer=reset` /
+  `timer=freeze(upSeconds=N)` on the same log line as the transition, see ADR-0011); reachability-
+  driven resets/freezes are not logged there, since that log is scoped to link/interface changes for
+  SMB-flap correlation, not TCP-reachability failures (which are already visible via the dot color
+  and notifications).
 
 **Popover (`hh:mm:ss`, `MenuContent`'s `ElapsedTimeRow` / `AppState.reachElapsedSeconds(at:)`) —
-reachability-based**, unchanged since [[0005-経過時間は到達確認基準とする|ADR-0005]]: tracks time
+reachability-only**, unchanged since [[0005-経過時間は到達確認基準とする|ADR-0005]]: tracks time
 since reachability was last confirmed, via `lastConfirmedStatus` edges in `apply(results:status:)`.
 First `.reachable` confirmation (or recovery from `.unreachable`) restarts from 0:00; transition
-into `.unreachable` freezes it.
+into `.unreachable` freezes it. Deliberately does *not* react to link-type changes, so it keeps
+counting straight through a link flap that doesn't affect reachability — showing the popover and
+menu bar side by side lets you tell "link flapped but reachability held" from "reachability itself
+was lost" at a glance.
 
-Both accessors take `now` as a parameter (rather than reading a `@Published` clock property on
-`AppState`) so that only the small views which actually display elapsed time re-render every
-second, instead of every view that observes `AppState` — see `ClockTick`. Callers supply the
-current time from `ClockTick`.
+Both `menuBarTimerElapsedSeconds(at:)` and `reachElapsedSeconds(at:)` take `now` as a parameter
+(rather than reading a `@Published` clock property on `AppState`) so that only the small views
+which actually display elapsed time re-render every second, instead of every view that observes
+`AppState` — see `ClockTick`. Callers supply the current time from `ClockTick`.
 
-The link-based menu bar timer ([[0012-経過時間表示をリンク接続基準に戻す|ADR-0012]]) was added
-specifically to correlate menu-bar-visible link flaps with SMB reconnect issues on another machine
-— reachability-based timing can't show this, since reachability can stay `.reachable` straight
-through a Wi-Fi⇄Ethernet flap that still breaks a live SMB session. The popover intentionally kept
-the original reachability-based timer instead of switching too, so the two surfaces show different
-information rather than duplicating each other. Don't collapse them into one without checking
-whether that distinction is still needed.
+This split ([[0012-メニューバーの経過時間表示をリンク接続かつ到達確認基準にする|ADR-0012]]) exists to correlate
+menu-bar-visible connectivity disruptions (of *either* kind — link flap or reachability loss) with
+SMB reconnect issues on another machine, while keeping the popover as a pure reachability indicator
+matching the app's original purpose. Don't collapse the two timers into one, and don't make the menu
+bar timer link-only or reachability-only again, without checking whether that distinction is still
+needed.
 
 ## Runtime/deployment quirks
 

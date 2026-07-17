@@ -13,13 +13,17 @@ final class AppState: ObservableObject {
     )
     @Published var link: LinkInfo = LinkInfo(interfaceType: nil)
 
-    /// Start of the current link-connected streak; ticking while non-nil.
-    /// Drives the menu bar label's elapsed time (see Elapsed-time semantics
-    /// in CLAUDE.md — this is link-based, not reachability-based).
-    private var linkTimerStart: Date?
-    /// Elapsed time captured at the moment the link dropped; frozen
-    /// (non-ticking) display value while disconnected.
-    private var linkTimerFrozenElapsed: TimeInterval?
+    /// Start of the current "fully healthy" streak (link connected *and*
+    /// reachable); ticking while non-nil. Drives the menu bar label's
+    /// elapsed time (see Elapsed-time semantics in CLAUDE.md). Reset by
+    /// either a new link connecting or reachability recovering; frozen by
+    /// either the link dropping or reachability being lost — whichever
+    /// happens first "wins" for a freeze, and whichever happens last "wins"
+    /// as the reset anchor.
+    private var menuBarTimerStart: Date?
+    /// Elapsed time captured at the moment the menu bar timer above was
+    /// frozen; the non-ticking display value while frozen.
+    private var menuBarTimerFrozenElapsed: TimeInterval?
 
     /// Start of the current reachable streak; ticking while non-nil. Drives
     /// the popover's elapsed time (reachability-based; deliberately distinct
@@ -91,19 +95,21 @@ final class AppState: ObservableObject {
             // First confirmation, or recovery from unreachable: restart from 0:00.
             reachTimerStart = Date()
             reachTimerFrozenElapsed = nil
+            resetMenuBarTimer()
         } else if status == .unreachable && previous == .reachable {
-            // Just lost reachability: freeze the timer at its current value.
+            // Just lost reachability: freeze the popover's timer at its current value.
             if let start = reachTimerStart {
                 reachTimerFrozenElapsed = Date().timeIntervalSince(start)
             }
             reachTimerStart = nil
+            freezeMenuBarTimer()
         }
 
         let failed = results.filter { $0.reachable != true }.map(\.target)
         notifications.handle(status: status, failedTargets: failed)
     }
 
-    /// Updates the link-connection elapsed timer for a link-type transition
+    /// Updates the menu bar's elapsed timer for a link-type transition
     /// (called only when `interfaceType` actually changed) and reports what
     /// happened, for `LinkHistoryLogger` to record alongside the transition.
     /// - New link (non-nil `newType`, whether from no-link or from a different
@@ -111,16 +117,24 @@ final class AppState: ObservableObject {
     /// - Link dropped (`newType == nil`): freeze at the current elapsed value.
     private func updateLinkTimer(newType: NWInterface.InterfaceType?) -> LinkHistoryLogger.TimerEvent {
         if newType != nil {
-            linkTimerStart = Date()
-            linkTimerFrozenElapsed = nil
+            resetMenuBarTimer()
             return .reset
         } else {
-            if let start = linkTimerStart {
-                linkTimerFrozenElapsed = Date().timeIntervalSince(start)
-            }
-            linkTimerStart = nil
-            return .freeze(elapsedSeconds: max(0, Int(linkTimerFrozenElapsed ?? 0)))
+            freezeMenuBarTimer()
+            return .freeze(elapsedSeconds: max(0, Int(menuBarTimerFrozenElapsed ?? 0)))
         }
+    }
+
+    private func resetMenuBarTimer() {
+        menuBarTimerStart = Date()
+        menuBarTimerFrozenElapsed = nil
+    }
+
+    private func freezeMenuBarTimer() {
+        if let start = menuBarTimerStart {
+            menuBarTimerFrozenElapsed = Date().timeIntervalSince(start)
+        }
+        menuBarTimerStart = nil
     }
 
     // MARK: - Derived presentation values
@@ -137,21 +151,22 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Seconds elapsed since the current link was last (re)connected, as of
-    /// `now`. Ticks while a link (Wi-Fi or Ethernet) is up; frozen at its last
-    /// value while disconnected; `nil` until the first link connects. Drives
-    /// the menu bar label only — see `reachElapsedSeconds(at:)` for the
-    /// popover's (deliberately different) reachability-based value.
+    /// Seconds elapsed since the connection was last "fully healthy" (link
+    /// connected *and* reachable), as of `now`. Ticks while healthy; frozen
+    /// at its last value once either the link drops or reachability is lost;
+    /// `nil` until the first time both are true. Drives the menu bar label
+    /// only — see `reachElapsedSeconds(at:)` for the popover's (deliberately
+    /// different) reachability-only value.
     ///
     /// Takes `now` as a parameter (rather than reading a `@Published` clock
     /// property on `AppState`) so that only the small views which actually
     /// display elapsed time re-render every second, instead of every view
     /// that observes `AppState` (see `ClockTick`).
-    func linkElapsedSeconds(at now: Date) -> Int? {
-        if let start = linkTimerStart {
+    func menuBarTimerElapsedSeconds(at now: Date) -> Int? {
+        if let start = menuBarTimerStart {
             return max(0, Int(now.timeIntervalSince(start)))
         }
-        if let frozen = linkTimerFrozenElapsed {
+        if let frozen = menuBarTimerFrozenElapsed {
             return max(0, Int(frozen))
         }
         return nil
@@ -160,8 +175,8 @@ final class AppState: ObservableObject {
     /// Seconds elapsed since reachability was last (re)confirmed, as of `now`.
     /// Ticks while reachable; frozen at its last value while unreachable;
     /// `nil` until the first reachable confirmation. Drives the popover's
-    /// elapsed-time row only — see `linkElapsedSeconds(at:)` for the menu
-    /// bar's (deliberately different) link-based value.
+    /// elapsed-time row only — see `menuBarTimerElapsedSeconds(at:)` for the
+    /// menu bar's (deliberately different) link+reachability-based value.
     func reachElapsedSeconds(at now: Date) -> Int? {
         if let start = reachTimerStart {
             return max(0, Int(now.timeIntervalSince(start)))
@@ -174,7 +189,7 @@ final class AppState: ObservableObject {
 
     /// "h:mm" elapsed string for the menu bar label (no seconds), as of `now`.
     func menuBarElapsedText(at now: Date) -> String {
-        guard let secs = linkElapsedSeconds(at: now) else { return "" }
+        guard let secs = menuBarTimerElapsedSeconds(at: now) else { return "" }
         let h = secs / 3600
         let m = (secs % 3600) / 60
         return String(format: "%d:%02d", h, m)
