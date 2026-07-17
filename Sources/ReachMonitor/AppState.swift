@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import SwiftUI
 
 /// Central observable state. Owns the monitors, funnels their callbacks onto the
@@ -12,15 +13,27 @@ final class AppState: ObservableObject {
     )
     @Published var link: LinkInfo = LinkInfo(interfaceType: nil)
 
-    /// Start of the current reachable streak; ticking while non-nil.
+    /// Start of the current link-connected streak; ticking while non-nil.
+    /// Drives the menu bar label's elapsed time (see Elapsed-time semantics
+    /// in CLAUDE.md — this is link-based, not reachability-based).
+    private var linkTimerStart: Date?
+    /// Elapsed time captured at the moment the link dropped; frozen
+    /// (non-ticking) display value while disconnected.
+    private var linkTimerFrozenElapsed: TimeInterval?
+
+    /// Start of the current reachable streak; ticking while non-nil. Drives
+    /// the popover's elapsed time (reachability-based; deliberately distinct
+    /// from the menu bar's link-based timer above, so the two surfaces show
+    /// different information instead of duplicating each other).
     private var reachTimerStart: Date?
     /// Elapsed time captured at the moment reachability was lost; frozen
     /// (non-ticking) display value while unreachable.
     private var reachTimerFrozenElapsed: TimeInterval?
     /// Last *confirmed* status from the monitor, used to detect reachable/
-    /// unreachable edges. Kept separate from `status` because `checkNow()`
-    /// optimistically sets `status = .checking`, which must not be mistaken
-    /// for a real edge.
+    /// unreachable edges for `reachTimerStart`/`reachTimerFrozenElapsed`.
+    /// Kept separate from `status` because `checkNow()` optimistically sets
+    /// `status = .checking` before the async result lands; if edge-detection
+    /// used `status` directly it would misfire on every manual recheck.
     private var lastConfirmedStatus: ReachStatus = .checking
 
     private let reachability = ReachabilityMonitor(targets: DefaultTargets.all)
@@ -45,7 +58,10 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if info.interfaceType != self.link.interfaceType {
-                    self.linkHistory.logLinkChange(from: self.link, to: info, wifi: self.wifi)
+                    let timerEvent = self.updateLinkTimer(newType: info.interfaceType)
+                    self.linkHistory.logLinkChange(
+                        from: self.link, to: info, wifi: self.wifi, timerEvent: timerEvent
+                    )
                 }
                 self.link = info
             }
@@ -87,6 +103,26 @@ final class AppState: ObservableObject {
         notifications.handle(status: status, failedTargets: failed)
     }
 
+    /// Updates the link-connection elapsed timer for a link-type transition
+    /// (called only when `interfaceType` actually changed) and reports what
+    /// happened, for `LinkHistoryLogger` to record alongside the transition.
+    /// - New link (non-nil `newType`, whether from no-link or from a different
+    ///   type): restart from 0:00.
+    /// - Link dropped (`newType == nil`): freeze at the current elapsed value.
+    private func updateLinkTimer(newType: NWInterface.InterfaceType?) -> LinkHistoryLogger.TimerEvent {
+        if newType != nil {
+            linkTimerStart = Date()
+            linkTimerFrozenElapsed = nil
+            return .reset
+        } else {
+            if let start = linkTimerStart {
+                linkTimerFrozenElapsed = Date().timeIntervalSince(start)
+            }
+            linkTimerStart = nil
+            return .freeze(elapsedSeconds: max(0, Int(linkTimerFrozenElapsed ?? 0)))
+        }
+    }
+
     // MARK: - Derived presentation values
 
     /// Color of the circle shown in the menu bar.
@@ -101,14 +137,31 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Seconds elapsed since reachability was last (re)confirmed, as of `now`.
-    /// Ticks while reachable; frozen at its last value while unreachable;
-    /// `nil` until the first reachable confirmation.
+    /// Seconds elapsed since the current link was last (re)connected, as of
+    /// `now`. Ticks while a link (Wi-Fi or Ethernet) is up; frozen at its last
+    /// value while disconnected; `nil` until the first link connects. Drives
+    /// the menu bar label only — see `reachElapsedSeconds(at:)` for the
+    /// popover's (deliberately different) reachability-based value.
     ///
     /// Takes `now` as a parameter (rather than reading a `@Published` clock
     /// property on `AppState`) so that only the small views which actually
     /// display elapsed time re-render every second, instead of every view
     /// that observes `AppState` (see `ClockTick`).
+    func linkElapsedSeconds(at now: Date) -> Int? {
+        if let start = linkTimerStart {
+            return max(0, Int(now.timeIntervalSince(start)))
+        }
+        if let frozen = linkTimerFrozenElapsed {
+            return max(0, Int(frozen))
+        }
+        return nil
+    }
+
+    /// Seconds elapsed since reachability was last (re)confirmed, as of `now`.
+    /// Ticks while reachable; frozen at its last value while unreachable;
+    /// `nil` until the first reachable confirmation. Drives the popover's
+    /// elapsed-time row only — see `linkElapsedSeconds(at:)` for the menu
+    /// bar's (deliberately different) link-based value.
     func reachElapsedSeconds(at now: Date) -> Int? {
         if let start = reachTimerStart {
             return max(0, Int(now.timeIntervalSince(start)))
@@ -121,7 +174,7 @@ final class AppState: ObservableObject {
 
     /// "h:mm" elapsed string for the menu bar label (no seconds), as of `now`.
     func menuBarElapsedText(at now: Date) -> String {
-        guard let secs = reachElapsedSeconds(at: now) else { return "" }
+        guard let secs = linkElapsedSeconds(at: now) else { return "" }
         let h = secs / 3600
         let m = (secs % 3600) / 60
         return String(format: "%d:%02d", h, m)

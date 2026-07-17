@@ -53,9 +53,12 @@ directly.
 - **`AppState`** — the only piece that decides *edges*, not just current values. It tracks
   `lastConfirmedStatus` separately from the published `status` because `checkNow()` optimistically
   sets `status = .checking` before the async result lands; if edge-detection used `status` directly
-  it would misfire on every manual recheck. Elapsed-time semantics (see below) and
-  `NotificationManager.handle(...)` (which fires only on reachable⇄unreachable transitions) both
-  key off this same confirmed-status edge.
+  it would misfire on every manual recheck. This confirmed-status edge drives both
+  `NotificationManager.handle(...)` (fires only on reachable⇄unreachable transitions) and the
+  popover's reachability-based elapsed timer (see Elapsed-time semantics below). Separately,
+  `AppState` compares each `LinkMonitor` update's `interfaceType` against the current
+  `link.interfaceType` to detect link-type edges, which drive both the menu bar's link-based
+  elapsed timer and `LinkHistoryLogger`.
 - **`ReachMonitorApp` / `MenuContent`** — SwiftUI shell. The menu bar label is intentionally *not*
   a plain SwiftUI `Circle()`: `MenuBarExtra` renders SwiftUI label content as a template image
   (monochrome), which strips the reachable/unreachable color. `AppState.menuBarIcon` instead
@@ -68,25 +71,53 @@ directly.
   etc.), so a 1 Hz publish there forces the *entire* popover view tree to re-evaluate every second
   even while the popover is closed (`MenuBarExtra(style: .window)` keeps its content mounted whether
   visible or not), which was a real, measurable CPU cost. Elapsed-time accessors on `AppState`
-  (`reachElapsedSeconds(at:)`, `menuBarElapsedText(at:)`) take `now` as a parameter instead of
+  (`linkElapsedSeconds(at:)`, `menuBarElapsedText(at:)`) take `now` as a parameter instead of
   reading a stored clock, so they stay pure and callers supply whichever clock is appropriate.
+- **`LinkHistoryLogger`** — appends one line per `LinkMonitor` interface-type transition to
+  `~/Library/Logs/reachmonitor_history.log` (timestamp, previous→current type, concurrent
+  `WiFiInfo`, and what happened to the elapsed timer), rotating to `.log.1` past 5MB. Pure side
+  effect for offline troubleshooting (e.g. correlating Wi-Fi⇄Ethernet flaps with SMB reconnects on
+  another machine); never affects UI or app behavior on write failure (see ADR-0011).
 
 ### Elapsed-time semantics (non-obvious, easy to regress)
 
-The menu bar's `h:mm` / popover's `hh:mm:ss` timer tracks **time since reachability was last
-confirmed**, not AP-connection time:
-- First `.reachable` confirmation (or recovery from `.unreachable`) → `reachTimerStart = Date()`,
-  restart from 0:00.
-- Transition into `.unreachable` → freeze: capture elapsed into `reachTimerFrozenElapsed`, clear
-  `reachTimerStart` so the clock stops advancing.
-- Staying in the same status → no change; either still ticking from `reachTimerStart` or still
-  showing the frozen value.
+**There are two independent elapsed timers that deliberately show different things** — don't
+conflate them or make one drive the other; the whole point is that they can diverge (e.g. a
+Wi-Fi⇄Ethernet flap resets the menu bar to 0:00 while the popover keeps counting straight through,
+because reachability never dropped).
 
-`AppState.reachElapsedSeconds(at:)` is the single source of truth for this; both the menu bar label
-and the popover format the same value differently, each passing in the current time from
-`ClockTick`. Don't reintroduce a separate AP-connection-based timer (an earlier version of this app
-used `WiFiMonitor`'s BSSID-change time for this and it was deliberately removed in favor of the
-reachability-based one).
+**Menu bar (`h:mm`, `AppState.menuBarElapsedText(at:)` / `linkElapsedSeconds(at:)`) — link-based.**
+Tracks time since the current link (Wi-Fi or Ethernet) was last (re)connected, driven by
+`LinkMonitor`'s `interfaceType`:
+- `AppState`'s `linkMonitor.onUpdate` compares each update's `interfaceType` against the current
+  `link.interfaceType`; only an actual change calls `updateLinkTimer(newType:)`.
+- New link connects (`interfaceType` goes from `nil` to some type, *or* switches directly from one
+  type to another, e.g. Wi-Fi→Ethernet) → `linkTimerStart = Date()`, restart from 0:00. A direct
+  type-to-type switch is treated as "old link gone, new link up" and resets rather than freezing
+  in between.
+- Link drops (`interfaceType` becomes `nil`) → freeze: capture elapsed into
+  `linkTimerFrozenElapsed`, clear `linkTimerStart` so the clock stops advancing.
+- Every reset/freeze is also recorded by `LinkHistoryLogger` alongside the transition that caused
+  it (`timer=reset` / `timer=freeze(upSeconds=N)`, see ADR-0011/0012).
+
+**Popover (`hh:mm:ss`, `MenuContent`'s `ElapsedTimeRow` / `AppState.reachElapsedSeconds(at:)`) —
+reachability-based**, unchanged since [[0005-経過時間は到達確認基準とする|ADR-0005]]: tracks time
+since reachability was last confirmed, via `lastConfirmedStatus` edges in `apply(results:status:)`.
+First `.reachable` confirmation (or recovery from `.unreachable`) restarts from 0:00; transition
+into `.unreachable` freezes it.
+
+Both accessors take `now` as a parameter (rather than reading a `@Published` clock property on
+`AppState`) so that only the small views which actually display elapsed time re-render every
+second, instead of every view that observes `AppState` — see `ClockTick`. Callers supply the
+current time from `ClockTick`.
+
+The link-based menu bar timer ([[0012-経過時間表示をリンク接続基準に戻す|ADR-0012]]) was added
+specifically to correlate menu-bar-visible link flaps with SMB reconnect issues on another machine
+— reachability-based timing can't show this, since reachability can stay `.reachable` straight
+through a Wi-Fi⇄Ethernet flap that still breaks a live SMB session. The popover intentionally kept
+the original reachability-based timer instead of switching too, so the two surfaces show different
+information rather than duplicating each other. Don't collapse them into one without checking
+whether that distinction is still needed.
 
 ## Runtime/deployment quirks
 

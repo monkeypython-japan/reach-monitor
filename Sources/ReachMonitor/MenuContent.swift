@@ -119,6 +119,10 @@ struct MenuContent: View {
 /// のをこのビューだけに閉じ込めることで、1 秒ごとの tick で再描画されるのが
 /// この行だけになり、`MenuContent` 全体（ターゲット一覧やボタンを含む）が
 /// 毎秒再評価されるのを防ぐ。
+///
+/// メニューバーのラベルはリンク接続基準（`AppState.linkElapsedSeconds`）に切り替えたが、
+/// この行は意図的に到達確認基準（`AppState.reachElapsedSeconds`）のまま据え置いている
+/// （メニューバーと同じ値を出すと冗長なため。ADR-0012 参照）。
 private struct ElapsedTimeRow: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var clock: ClockTick
