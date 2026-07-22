@@ -80,8 +80,10 @@ final class ReachabilityMonitor {
         }
     }
 
-    /// Attempt a single TCP connection. Reports success on `.ready`, failure on
-    /// `.failed`/`.cancelled` or after `connectionTimeout`.
+    /// Attempt a single TCP (or TCP+TLS, when `target.usesTLS`) connection.
+    /// Reports success on `.ready` (which for a TLS target implies a valid,
+    /// certificate-verified handshake, not just a TCP accept — see ADR-0013),
+    /// failure on `.failed`/`.cancelled` or after `connectionTimeout`.
     private func probe(_ target: Target, completion: @escaping (Bool, TimeInterval?) -> Void) {
         let host = NWEndpoint.Host(target.host)
         guard let port = NWEndpoint.Port(rawValue: target.port) else {
@@ -89,7 +91,7 @@ final class ReachabilityMonitor {
             return
         }
 
-        let params = NWParameters.tcp
+        let params = target.usesTLS ? NWParameters.tls : NWParameters.tcp
         let connection = NWConnection(host: host, port: port, using: params)
         let started = Date()
 

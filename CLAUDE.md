@@ -38,10 +38,14 @@ Data flow: three independent monitors push updates into a single `@MainActor` `A
 directly.
 
 - **`ReachabilityMonitor`** — owns a background `DispatchSourceTimer` (interval in
-  `MonitorConfig.checkInterval`) that TCP-connects (`NWConnection`) to every `Target` in
-  `Targets.swift`, each with its own timeout. Reports `[TargetResult]` + aggregate `ReachStatus`
-  (`.reachable` if *any* target succeeds, else `.unreachable`) back via `onUpdate` on the main
-  queue. Also exposes `checkNow()` for the manual "recheck" button.
+  `MonitorConfig.checkInterval`) that connects (`NWConnection`) to every `Target` in
+  `Targets.swift`, each with its own timeout. Targets with `usesTLS: true` (the two HTTPS targets)
+  go through a full TLS handshake (`NWParameters.tls`) rather than bare TCP (`NWParameters.tcp`),
+  since a transparent captive portal can complete a raw TCP handshake on port 443 without actually
+  reaching the real destination, but can't present a certificate that validates for it (see
+  ADR-0013). Reports `[TargetResult]` + aggregate `ReachStatus` (`.reachable` if *any* target
+  succeeds, else `.unreachable`) back via `onUpdate` on the main queue. Also exposes `checkNow()`
+  for the manual "recheck" button.
 - **`WiFiMonitor`** — reads current SSID/BSSID via `CWWiFiClient`. On macOS 14+ these are `nil`
   without Location authorization, so it drives a `CLLocationManager` permission request and only
   reports real values once granted. Combines CoreWLAN change-event delegates with a polling
