@@ -79,7 +79,7 @@ directly.
   reading a stored clock, so they stay pure and callers supply whichever clock is appropriate.
 - **`LinkHistoryLogger`** — appends one line per `LinkMonitor` interface-type transition to
   `~/Library/Logs/reachmonitor_history.log` (timestamp, previous→current type, concurrent
-  `WiFiInfo`, and what happened to the elapsed timer), rotating to `.log.1` past 5MB. Pure side
+  `WiFiInfo`, and the resulting frozen elapsed seconds), rotating to `.log.1` past 5MB. Pure side
   effect for offline troubleshooting (e.g. correlating Wi-Fi⇄Ethernet flaps with SMB reconnects on
   another machine); never affects UI or app behavior on write failure (see ADR-0011).
 
@@ -87,29 +87,30 @@ directly.
 
 **There are two independent elapsed timers that deliberately show different things** — don't
 conflate them or make one drive the other; the whole point is that they can diverge (e.g. a
-Wi-Fi⇄Ethernet flap resets the menu bar to 0:00 while the popover keeps counting straight through,
-because reachability never dropped).
+Wi-Fi⇄Ethernet flap freezes the menu bar while the popover keeps counting straight through, because
+reachability never dropped).
 
 **Menu bar (`h:mm`, `AppState.menuBarElapsedText(at:)` / `menuBarTimerElapsedSeconds(at:)`) —
 "fully healthy" (link connected *and* reachable).** Tracks time since the connection was last both
 link-connected and TCP-reachable at once, using a single `menuBarTimerStart`/
 `menuBarTimerFrozenElapsed` pair driven by *two* independent edge sources:
 - `AppState`'s `linkMonitor.onUpdate` compares each update's `interfaceType` against the current
-  `link.interfaceType`; only an actual change calls `updateLinkTimer(newType:)`, which resets on a
-  new link (`interfaceType` from `nil` to some type, *or* switching directly from one type to
-  another, e.g. Wi-Fi→Ethernet — treated as "old link gone, new link up") and freezes when the link
-  drops (`interfaceType` becomes `nil`).
+  `link.interfaceType`; any actual change (new link, dropped link, or switching type, e.g.
+  Wi-Fi→Ethernet) calls `freezeMenuBarTimer()`. **A link change never resets the timer by itself —
+  it only ever freezes.** The timer only starts counting again once reachability is actually
+  confirmed on the new link (see ADR-0014; an earlier version reset to 0:00 immediately on link
+  connect, which showed a ticking "healthy" timer before reachability had been confirmed at all —
+  don't reintroduce that).
 - `apply(results:status:)`'s confirmed-status edges (the same ones driving the popover's timer,
-  see below) *also* reset the menu bar timer on reachability recovery and freeze it on reachability
-  loss, via the shared `resetMenuBarTimer()`/`freezeMenuBarTimer()` helpers.
+  see below) reset the menu bar timer on reachability recovery and freeze it on reachability loss,
+  via the shared `resetMenuBarTimer()`/`freezeMenuBarTimer()` helpers. **Resetting only ever
+  happens here, on reachability confirmation — never on the link-edge path.**
 - Both `resetMenuBarTimer()`/`freezeMenuBarTimer()` are no-ops-safe to call redundantly: freezing an
-  already-frozen timer keeps the existing frozen value, and whichever of the two edge sources resets
-  *last* naturally becomes the new start time — no explicit coordination between them is needed.
-- Only the link-edge path is recorded by `LinkHistoryLogger` (`timer=reset` /
-  `timer=freeze(upSeconds=N)` on the same log line as the transition, see ADR-0011); reachability-
-  driven resets/freezes are not logged there, since that log is scoped to link/interface changes for
-  SMB-flap correlation, not TCP-reachability failures (which are already visible via the dot color
-  and notifications).
+  already-frozen timer keeps the existing frozen value.
+- The link-edge path is recorded by `LinkHistoryLogger` (`timer=freeze(upSeconds=N)` on the same
+  log line as the transition, see ADR-0011/0014); reachability-driven resets/freezes are not logged
+  there, since that log is scoped to link/interface changes for SMB-flap correlation, not
+  TCP-reachability failures (which are already visible via the dot color and notifications).
 
 **Popover (`hh:mm:ss`, `MenuContent`'s `ElapsedTimeRow` / `AppState.reachElapsedSeconds(at:)`) —
 reachability-only**, unchanged since [[0005-経過時間は到達確認基準とする|ADR-0005]]: tracks time

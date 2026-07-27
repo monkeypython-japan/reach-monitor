@@ -1,5 +1,4 @@
 import Foundation
-import Network
 import SwiftUI
 
 /// Central observable state. Owns the monitors, funnels their callbacks onto the
@@ -15,11 +14,14 @@ final class AppState: ObservableObject {
 
     /// Start of the current "fully healthy" streak (link connected *and*
     /// reachable); ticking while non-nil. Drives the menu bar label's
-    /// elapsed time (see Elapsed-time semantics in CLAUDE.md). Reset by
-    /// either a new link connecting or reachability recovering; frozen by
-    /// either the link dropping or reachability being lost — whichever
-    /// happens first "wins" for a freeze, and whichever happens last "wins"
-    /// as the reset anchor.
+    /// elapsed time (see Elapsed-time semantics in CLAUDE.md). Reset *only*
+    /// by reachability being (re)confirmed; frozen by *any* link-type change
+    /// (new link, dropped link, or switching type) as well as by reachability
+    /// being lost. In particular, a link change never resets the timer by
+    /// itself — it always freezes first, and only reachability confirming on
+    /// the new link resets it to 0:00 (see ADR-0014; don't reintroduce
+    /// "reset on link connect", which showed a ticking timer before
+    /// reachability had actually been (re)confirmed on the new link).
     private var menuBarTimerStart: Date?
     /// Elapsed time captured at the moment the menu bar timer above was
     /// frozen; the non-ticking display value while frozen.
@@ -62,9 +64,13 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if info.interfaceType != self.link.interfaceType {
-                    let timerEvent = self.updateLinkTimer(newType: info.interfaceType)
+                    // Any link change freezes the menu bar timer; it only
+                    // resets once reachability is confirmed on the new link
+                    // (in apply(results:status:) below) — see ADR-0014.
+                    self.freezeMenuBarTimer()
                     self.linkHistory.logLinkChange(
-                        from: self.link, to: info, wifi: self.wifi, timerEvent: timerEvent
+                        from: self.link, to: info, wifi: self.wifi,
+                        frozenElapsedSeconds: max(0, Int(self.menuBarTimerFrozenElapsed ?? 0))
                     )
                 }
                 self.link = info
@@ -107,22 +113,6 @@ final class AppState: ObservableObject {
 
         let failed = results.filter { $0.reachable != true }.map(\.target)
         notifications.handle(status: status, failedTargets: failed)
-    }
-
-    /// Updates the menu bar's elapsed timer for a link-type transition
-    /// (called only when `interfaceType` actually changed) and reports what
-    /// happened, for `LinkHistoryLogger` to record alongside the transition.
-    /// - New link (non-nil `newType`, whether from no-link or from a different
-    ///   type): restart from 0:00.
-    /// - Link dropped (`newType == nil`): freeze at the current elapsed value.
-    private func updateLinkTimer(newType: NWInterface.InterfaceType?) -> LinkHistoryLogger.TimerEvent {
-        if newType != nil {
-            resetMenuBarTimer()
-            return .reset
-        } else {
-            freezeMenuBarTimer()
-            return .freeze(elapsedSeconds: max(0, Int(menuBarTimerFrozenElapsed ?? 0)))
-        }
     }
 
     private func resetMenuBarTimer() {

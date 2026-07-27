@@ -7,15 +7,6 @@ import Network
 /// ネットワークのトラブルシュート用の生ログで、UI やアプリの動作には一切影響しない
 /// 副作用としてのみ動作する（書き込み失敗は無視する）。
 final class LinkHistoryLogger {
-    /// メニューバーの経過時間タイマーに何が起きたか（`AppState` のリンク接続タイマーと
-    /// 同じ判定を、ログにも残すためのもの）。
-    enum TimerEvent {
-        /// 新しいリンクに接続し、経過時間が 0:00 から再スタートした。
-        case reset
-        /// リンクが切れ、経過時間が `elapsedSeconds` で停止した。
-        case freeze(elapsedSeconds: Int)
-    }
-
     private let logURL: URL
     private let maxSizeBytes: UInt64
 
@@ -37,10 +28,11 @@ final class LinkHistoryLogger {
 
     /// リンク種別の変化を1行追記する。`wifi` は変化時点の Wi-Fi 関連情報
     /// （AP 切り替えが原因か、単なる経路再評価かを切り分けるための併記）。
-    /// `timerEvent` はこの変化に伴ってメニューバーの経過時間タイマーがリセット/停止
-    /// したかを記録する。
+    /// リンク変化は必ずメニューバーの経過時間タイマーを凍結させるので
+    /// （到達確認が改めて取れるまでは 0:00 に戻さない、ADR-0014 参照）、
+    /// `frozenElapsedSeconds` にはその時点で凍結された経過秒数を渡す。
     func logLinkChange(
-        from previous: LinkInfo, to current: LinkInfo, wifi: WiFiInfo, timerEvent: TimerEvent
+        from previous: LinkInfo, to current: LinkInfo, wifi: WiFiInfo, frozenElapsedSeconds: Int
     ) {
         rotateIfNeeded()
 
@@ -48,18 +40,9 @@ final class LinkHistoryLogger {
         let line = "\(timestamp) link=\(name(previous.interfaceType)) -> \(name(current.interfaceType))"
             + " ssid=\(wifi.ssid ?? "-") bssid=\(wifi.bssid ?? "-")"
             + " hasWiFiInterface=\(wifi.hasWiFiInterface)"
-            + " timer=\(describe(timerEvent))\n"
+            + " timer=freeze(upSeconds=\(frozenElapsedSeconds))\n"
 
         append(line)
-    }
-
-    private func describe(_ event: TimerEvent) -> String {
-        switch event {
-        case .reset:
-            return "reset"
-        case .freeze(let elapsedSeconds):
-            return "freeze(upSeconds=\(elapsedSeconds))"
-        }
     }
 
     private func name(_ type: NWInterface.InterfaceType?) -> String {
