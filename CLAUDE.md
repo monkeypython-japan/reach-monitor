@@ -105,6 +105,15 @@ link-connected and TCP-reachable at once, using a single `menuBarTimerStart`/
   see below) reset the menu bar timer on reachability recovery and freeze it on reachability loss,
   via the shared `resetMenuBarTimer()`/`freezeMenuBarTimer()` helpers. **Resetting only ever
   happens here, on reachability confirmation — never on the link-edge path.**
+- The reachability-recovery reset condition is `recoveredFromUnreachable ||
+  menuBarAwaitingFreshReachability`, not just `recoveredFromUnreachable`. The flag is needed because
+  if reachability was already `.reachable` and never actually dropped across a link change,
+  `lastConfirmedStatus` never leaves `.reachable`, so `recoveredFromUnreachable` alone would never
+  fire again and the menu bar timer would stay frozen forever even on a perfectly healthy new link
+  (see ADR-0015). The flag is set alongside `freezeMenuBarTimer()` on every link edge and cleared
+  once consumed. The popover's `reachTimerStart`/`reachTimerFrozenElapsed` deliberately do *not*
+  consult this flag — only `recoveredFromUnreachable`/`justLostReachability`, so link changes still
+  can't affect it.
 - Both `resetMenuBarTimer()`/`freezeMenuBarTimer()` are no-ops-safe to call redundantly: freezing an
   already-frozen timer keeps the existing frozen value.
 - The link-edge path is recorded by `LinkHistoryLogger` (`timer=freeze(upSeconds=N)` on the same

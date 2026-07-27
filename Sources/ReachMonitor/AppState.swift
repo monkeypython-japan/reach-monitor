@@ -41,6 +41,15 @@ final class AppState: ObservableObject {
     /// `status = .checking` before the async result lands; if edge-detection
     /// used `status` directly it would misfire on every manual recheck.
     private var lastConfirmedStatus: ReachStatus = .checking
+    /// Set whenever a link change freezes the menu bar timer; cleared the
+    /// next time reachability is confirmed. Needed because if reachability
+    /// was *already* `.reachable` and never actually dropped across the link
+    /// change, `lastConfirmedStatus` never leaves `.reachable`, so the normal
+    /// "recovered from unreachable" edge below would never fire again and the
+    /// menu bar timer would stay frozen forever even though the new link is
+    /// perfectly healthy (see ADR-0015). This flag gives the very next
+    /// reachable result a reset trigger regardless of `lastConfirmedStatus`.
+    private var menuBarAwaitingFreshReachability = false
 
     private let reachability = ReachabilityMonitor(targets: DefaultTargets.all)
     private let wifiMonitor = WiFiMonitor()
@@ -66,8 +75,9 @@ final class AppState: ObservableObject {
                 if info.interfaceType != self.link.interfaceType {
                     // Any link change freezes the menu bar timer; it only
                     // resets once reachability is confirmed on the new link
-                    // (in apply(results:status:) below) — see ADR-0014.
+                    // (in apply(results:status:) below) — see ADR-0014/0015.
                     self.freezeMenuBarTimer()
+                    self.menuBarAwaitingFreshReachability = true
                     self.linkHistory.logLinkChange(
                         from: self.link, to: info, wifi: self.wifi,
                         frozenElapsedSeconds: max(0, Int(self.menuBarTimerFrozenElapsed ?? 0))
@@ -96,18 +106,28 @@ final class AppState: ObservableObject {
 
         let previous = lastConfirmedStatus
         lastConfirmedStatus = status
+        let recoveredFromUnreachable = status == .reachable && previous != .reachable
+        let justLostReachability = status == .unreachable && previous == .reachable
 
-        if status == .reachable && previous != .reachable {
+        if recoveredFromUnreachable {
             // First confirmation, or recovery from unreachable: restart from 0:00.
             reachTimerStart = Date()
             reachTimerFrozenElapsed = nil
-            resetMenuBarTimer()
-        } else if status == .unreachable && previous == .reachable {
+        } else if justLostReachability {
             // Just lost reachability: freeze the popover's timer at its current value.
             if let start = reachTimerStart {
                 reachTimerFrozenElapsed = Date().timeIntervalSince(start)
             }
             reachTimerStart = nil
+        }
+
+        if status == .reachable && (recoveredFromUnreachable || menuBarAwaitingFreshReachability) {
+            // Reachability confirmed — either a genuine recovery, or (via the
+            // flag) the first confirmation on a link that changed while we
+            // were already reachable, which never trips recoveredFromUnreachable.
+            resetMenuBarTimer()
+            menuBarAwaitingFreshReachability = false
+        } else if justLostReachability {
             freezeMenuBarTimer()
         }
 
