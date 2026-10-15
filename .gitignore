@@ -3,3 +3,4 @@
 ReachMonitor.app/
 *.o
 *.swp
+.claude/settings.local.json
