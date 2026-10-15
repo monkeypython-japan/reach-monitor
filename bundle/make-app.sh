@@ -66,6 +66,7 @@ mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 cp "$BIN" "$BINARY"
 cp "$ROOT/bundle/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/bundle/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 echo "==> Ad-hoc code signing…"
