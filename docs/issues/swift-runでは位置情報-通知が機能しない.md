@@ -8,6 +8,7 @@ tags:
   - packaging
 status: resolved
 date: 2026-07-01
+modified: 2026-07-07
 ---
 
 # `swift run` では位置情報・通知が機能しない

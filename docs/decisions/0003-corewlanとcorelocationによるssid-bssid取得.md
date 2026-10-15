@@ -9,6 +9,7 @@ tags:
 adr: 0003
 status: accepted
 date: 2026-07-01
+modified: 2026-07-07
 ---
 
 # ADR-0003: CoreWLAN + CoreLocation で現在の SSID/BSSID を取得する

@@ -9,6 +9,7 @@ tags:
   # レイヤー例: network / wifi / ui / packaging
 status: open
 date: YYYY-MM-DD
+modified: 2026-07-07
 ---
 
 # <症状を一言で表すタイトル>

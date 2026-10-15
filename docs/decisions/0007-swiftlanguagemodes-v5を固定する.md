@@ -10,6 +10,7 @@ tags:
 adr: 0007
 status: accepted
 date: 2026-07-01
+modified: 2026-07-07
 ---
 
 # ADR-0007: `swiftLanguageModes: [.v5]` を固定する

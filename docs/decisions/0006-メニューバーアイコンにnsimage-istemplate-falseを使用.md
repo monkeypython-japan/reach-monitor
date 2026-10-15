@@ -9,7 +9,7 @@ tags:
 adr: 0006
 status: accepted
 date: 2026-07-01
-modified: 2026-07-07
+modified: 2026-07-13
 ---
 
 # ADR-0006: メニューバーアイコンは NSImage(isTemplate: false) で描画する

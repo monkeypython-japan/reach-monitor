@@ -9,6 +9,7 @@ tags:
 adr: 0004
 status: accepted
 date: 2026-07-07
+modified: 2026-07-07
 ---
 
 # ADR-0004: LaunchAgent 経由での起動方式に変更する

@@ -8,6 +8,7 @@ tags:
   - ui
 status: resolved
 date: 2026-07-01
+modified: 2026-07-07
 ---
 
 # MenuBarExtra のラベルが色を失う（テンプレート画像化される）

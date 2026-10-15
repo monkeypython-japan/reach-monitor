@@ -8,6 +8,7 @@ tags:
   - packaging
 status: workaround
 date: 2026-07-07
+modified: 2026-07-07
 ---
 
 # Finder からのアプリ起動が Gatekeeper にブロックされる（macOS 26）

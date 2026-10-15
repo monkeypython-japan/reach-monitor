@@ -9,6 +9,7 @@ tags:
 adr: 0001
 status: accepted
 date: 2026-07-01
+modified: 2026-07-07
 ---
 
 # ADR-0001: SwiftPM ビルド + 手動 .app パッケージング（ad-hoc 署名）を採用する
